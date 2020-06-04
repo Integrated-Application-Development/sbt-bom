@@ -10,5 +10,6 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Dependencies.library,
     scriptedLaunchOpts += ("-Dplugin.version=" + version.value),
     scriptedBufferLog := false,
-    dependencyOverrides += "org.typelevel" %% "jawn-parser" % "0.14.1"
+    dependencyOverrides += "org.typelevel" %% "jawn-parser" % "0.14.1",
+    publishMavenStyle := false
   )
