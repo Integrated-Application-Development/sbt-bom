@@ -3,8 +3,8 @@ package sbtBom
 import java.io.FileOutputStream
 import java.nio.channels.Channels
 
-import sbt.{Def, File, Setting, _}
-import sbt.Keys.{sLog, target}
+import sbt._
+import sbt.Keys._
 import sbtBom.BomSbtPlugin.autoImport._
 
 import scala.xml.{Elem, PrettyPrinter, XML}

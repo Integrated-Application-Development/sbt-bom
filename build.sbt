@@ -2,9 +2,9 @@ lazy val root = (project in file("."))
   .enablePlugins(ScriptedPlugin)
   .settings(
     name := "sbt-bom",
-    organization := "sbtBom",
+    organization := "com.integradev.3rdparty",
     organizationName := "SBT BOM",
-    version := "0.1.0-SNAPSHOT",
+    version := "0.1.1-SNAPSHOT",
     sbtPlugin := true,
     scalaVersion := "2.12.8",
     libraryDependencies ++= Dependencies.library,

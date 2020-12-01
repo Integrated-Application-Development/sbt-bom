@@ -2,6 +2,7 @@ package sbtBom
 
 import java.util
 
+import org.cyclonedx.CycloneDxSchema
 import org.cyclonedx.model.Hash
 import org.cyclonedx.util.BomUtils
 import sbtBom.model.{Dependencies, Dependency, License}
@@ -48,7 +49,7 @@ class BomBuilder(dependencies: Dependencies) {
     d.file
       .map { f =>
         <hashes>
-        { BomUtils.calculateHashes(f).asScala.map(buildHash) }
+        { BomUtils.calculateHashes(f, CycloneDxSchema.Version.VERSION_11).asScala.map(buildHash) }
         </hashes>
       }
       .getOrElse(NodeSeq.Empty)
