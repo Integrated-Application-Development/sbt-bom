@@ -6,49 +6,63 @@ import java.nio.channels.Channels
 import sbt._
 import sbt.Keys._
 import sbtBom.BomSbtPlugin.autoImport._
+import Defaults.prefix
 
 import scala.xml.{Elem, PrettyPrinter, XML}
 import scala.util.control.Exception.ultimately
 
 object BomSbtSettings {
-  def projectSettings: Seq[Setting[_]] = {
-    // val configs = Seq(Compile, Test, IntegrationTest, Runtime, Provided, Optional)
-    Seq(
-      targetBomFile := target.value / "bom.xml",
-      makeBom := Def.taskDyn(makeBomTask(Classpaths.updateTask.value)).value,
-      listBom := Def.taskDyn(listBomTask(Classpaths.updateTask.value)).value,
-    )
-  }
+  def projectSettings: Seq[Setting[_]] =
+    inConfig(Compile)(bomSettings) ++
+    inConfig(Test)(bomSettings)
 
-  private def makeBomTask(
-      report: UpdateReport): Def.Initialize[Task[sbt.File]] = Def.task[File] {
+  private def bomSettings = Seq(
+    bomFileName := "bom.xml",
+    targetBomFile := target.value / (prefix(configuration.value.name) + bomFileName.value),
+    makeBom := makeBomTask.value,
+    listBom := listBomTask.value,
+    noCompileDependenciesInOtherReports := true
+  )
+
+  private def makeBomTask: Def.Initialize[Task[sbt.File]] = Def.task[File] {
     val log = sLog.value
     val bomFile = targetBomFile.value
 
     log.info(s"Creating bom file ${bomFile.getAbsolutePath}")
 
-    writeXmlToFile(new OldBomBuilder(report.configuration(Compile)).build,
-                   "UTF-8",
-                   bomFile)
+    writeXmlToFile(generateBom.value,"UTF-8", bomFile)
 
     log.info(s"Bom file ${bomFile.getAbsolutePath} created")
 
     bomFile
   }
 
-  private def listBomTask(report: UpdateReport): Def.Initialize[Task[String]] =
-    Def.task[String] {
-      val log = sLog.value
+  private def listBomTask: Def.Initialize[Task[String]] = Def.task[String] {
+    val log = sLog.value
+    log.info("Creating bom")
 
-      log.info("Creating bom")
+    val bomText =
+      xmlToText(generateBom.value, "UTF-8")
 
-      val bomText =
-        xmlToText(new OldBomBuilder(report.configuration(Compile)).build, "UTF8")
+    log.info("Bom created")
 
-      log.info("Bom created")
+    bomText
+  }
 
-      bomText
-    }
+  private def generateBom = Def.task[Elem] {
+    val report = Classpaths.updateTask.value
+    val ignoreModules: Seq[ModuleReport] =
+      if (configuration.value != Compile && noCompileDependenciesInOtherReports.value)
+        report.configuration(Compile).map(_.modules).getOrElse(Seq.empty)
+      else
+        Seq.empty
+
+    new OldBomBuilder(
+      report.configuration(configuration.value),
+      ignoreModules
+
+    ).build
+  }
 
   private def writeXmlToFile(xml: Elem,
                              encoding: String,

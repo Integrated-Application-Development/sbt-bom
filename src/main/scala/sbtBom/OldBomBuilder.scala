@@ -3,7 +3,6 @@ package sbtBom
 import com.github.packageurl.PackageURL
 import sbt.librarymanagement.{ConfigurationReport, ModuleReport}
 import org.cyclonedx.model.LicenseChoice
-
 import org.cyclonedx.CycloneDxSchema
 import org.cyclonedx.util.{BomUtils, LicenseResolver}
 import sbt.File
@@ -11,17 +10,27 @@ import sbt.File
 import scala.collection.JavaConverters.asScalaBufferConverter
 import scala.xml.{Elem, Node}
 
-class OldBomBuilder(reportOption: Option[ConfigurationReport]) {
+class OldBomBuilder(reportOption: Option[ConfigurationReport], ignoreModules: Seq[ModuleReport]) {
   def build: Elem = {
     <bom xmlns="http://cyclonedx.org/schema/bom/1.1" version="1">
       <components>
-        { reportOption.map(buildComponents(_)).getOrElse(Seq()) }
+        { reportOption.map(buildComponents(_, ignoreModules)).getOrElse(Seq()) }
       </components>
     </bom>
   }
 
-  private def buildComponents(report: ConfigurationReport): Seq[Elem] = {
-    report.modules.map(buildModule(_))
+  private def buildComponents(
+    report: ConfigurationReport,
+    ignoreModules: Seq[ModuleReport]
+  ): Seq[Elem] = {
+    report
+      .modules
+      .filterNot(module => ignoreModules.exists( ignoreModule =>
+        ignoreModule.module.organization.equals(module.module.organization) &&
+          ignoreModule.module.name.equals(module.module.name) &&
+          ignoreModule.module.revision.equals(module.module.revision)
+      ))
+      .map(buildModule)
   }
 
   private def buildPurl(organisation: String, artifactId: String, revision: String): String = {
@@ -59,7 +68,7 @@ class OldBomBuilder(reportOption: Option[ConfigurationReport]) {
     if (licenses.isEmpty) {
       unlicensed
     } else {
-      licenses.map(buildLicense(_))
+      licenses.map(buildLicense)
     }
 
   private val unlicensed = {
