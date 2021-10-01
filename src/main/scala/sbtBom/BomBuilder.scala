@@ -1,68 +1,105 @@
 package sbtBom
 
-import java.util
+import com.github.packageurl.PackageURL
+import org.cyclonedx.{BomGeneratorFactory, CycloneDxSchema}
+import org.cyclonedx.CycloneDxSchema.Version
+import org.cyclonedx.model.{Bom, Component, License, LicenseChoice}
+import org.cyclonedx.util.{BomUtils, LicenseResolver}
+import sbt.librarymanagement.{ConfigurationReport, ModuleReport}
 
-import org.cyclonedx.CycloneDxSchema
-import org.cyclonedx.model.Hash
-import org.cyclonedx.util.BomUtils
-import sbtBom.model.{Dependencies, Dependency, License}
+import javax.xml.transform.TransformerFactory
+import javax.xml.transform.dom.DOMSource
+import javax.xml.transform.sax.SAXResult
+import scala.xml.Node
+import scala.xml.parsing.NoBindingFactoryAdapter
 
-import scala.xml.{Atom, Elem, NodeSeq, Text}
-
-class BomBuilder(dependencies: Dependencies) {
-  def build: Elem =
-    <bom xmlns="http://cyclonedx.org/schema/bom/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1" xsi:schemaLocation="http://cyclonedx.org/schema/bom/1.0 http://cyclonedx.org/schema/bom/1.0">
-      {buildComponents}
-    </bom>
-
-  private def buildComponents = {
-    <components>
-      {dependencies.all.map(buildComponent)}
-    </components>
+class BomBuilder(
+  reportOption: Option[ConfigurationReport],
+  ignoreModules: Seq[ModuleReport],
+  schemaVersion: Version
+) {
+  private def toBom(report: ConfigurationReport): Bom = {
+    val bom = new Bom
+    //TODO: Add Serial Number for Spec >= 1.1
+    //TODO: Add Metadata & Dependencies for Spec >= 1.2
+    report.modules.map(toComponent).foreach(bom.addComponent)
+    bom
   }
 
-  private def buildComponent(d: Dependency) =
-    <component type="library">
-      <group>{d.group}</group>
-      <name>{d.name}</name>
-      <version>{d.version}</version>
-      <modified>{d.modified}</modified>
-      {buildLicenses(d)}
-      {buildHashes(d)}
-    </component>
+  def buildXml: Node = {
+    val adapter = new NoBindingFactoryAdapter
+    TransformerFactory
+      .newInstance()
+      .newTransformer()
+      .transform(
+        new DOMSource(
+          BomGeneratorFactory
+            .createXml(schemaVersion, reportOption.map(toBom).getOrElse(new Bom))
+            .generate()
+        ),
+        new SAXResult(adapter)
+      )
+    adapter.rootElem
+  }
 
-  private def buildLicenses(d: Dependency) =
-    if (!d.licenses.isEmpty) {
-      <licenses>
-        {d.licenses.map(buildLicense)}
-      </licenses>
-    }
+  private def toComponent(moduleReport: ModuleReport): Component = {
+    val component = new Component
+    component.setGroup(moduleReport.module.organization)
+    component.setName(moduleReport.module.name)
+    component.setVersion(moduleReport.module.revision)
+    component.setLicenseChoice(toLicenseChoice(moduleReport.licenses))
+    component.setType(Component.Type.LIBRARY)
+    component.setPurl(
+      new PackageURL(
+        PackageURL.StandardTypes.MAVEN,
+        component.getGroup,
+        component.getName,
+        component.getVersion,
+        null,
+        null))
+    moduleReport.artifacts
+      .find(artifact => artifact._1.`type`.equalsIgnoreCase("jar"))
+      .map(artefact => BomUtils.calculateHashes(artefact._2, schemaVersion))
+      .foreach(component.setHashes)
+    component.setModified(false)
+    component.setBomRef(component.getPurl)
+    component
+  }
 
-  private def buildLicense(license: License) =
-    <license>
-      {license.id xmlMap (<id></id>)}
-      {license.name xmlMap (<name></name>)}
-    </license>
-
-  private def buildHashes(d: Dependency) = {
-    import scala.collection.JavaConverters._
-    d.file
-      .map { f =>
-        <hashes>
-        { BomUtils.calculateHashes(f, CycloneDxSchema.Version.VERSION_11).asScala.map(buildHash) }
-        </hashes>
+  private def resolveLicense(licenseString: String, licenseChoice: LicenseChoice): Boolean = {
+    val resolvedLicenses = LicenseResolver.resolve(licenseString)
+    if (resolvedLicenses != null) {
+      if (resolvedLicenses.getLicenses != null && !resolvedLicenses.getLicenses.isEmpty) {
+        licenseChoice.addLicense(resolvedLicenses.getLicenses.get(0))
+        return true
       }
-      .getOrElse(NodeSeq.Empty)
+    }
+    false
   }
 
-  private def buildHash(hash: Hash) =
-    <hash alg={hash.getAlgorithm}>{hash.getValue}</hash>
+  private def toLicenseChoice(licenses: Vector[(String, Option[String])]): LicenseChoice = {
+    val licenseChoice = new LicenseChoice
 
-  implicit class OptionElem[T](opt: Option[T]) {
-    def xmlMap(e: Elem): NodeSeq =
-      xmlMap((v) => e.copy(child = new Text(v.toString)))
+    licenses.foreach(license => {
+      val licenseName = license._1
+      val licenseUrl = license._2
+      var resolved = false
 
-    def xmlMap(fn: (T) => Elem): NodeSeq =
-      opt.map(fn).getOrElse(NodeSeq.Empty)
+      if (licenseName != null) {
+        resolved = resolveLicense(licenseName, licenseChoice)
+      }
+
+      if (!resolved && licenseUrl != null && licenseUrl.isDefined) {
+        resolved = resolveLicense(licenseUrl.get, licenseChoice)
+      }
+
+      if (!resolved) {
+        val license = new License
+        license.setName(licenseName)
+        licenseChoice.addLicense(license)
+      }
+    })
+
+    licenseChoice
   }
 }
