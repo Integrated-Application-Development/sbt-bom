@@ -49,8 +49,24 @@ object BomSbtSettings {
     bomText
   }
 
+  private def applyCrossVersion(name: String, crossFunction: Option[String => String]): String = {
+    crossFunction match {
+      case None         => name
+      case Some(cross)  => cross(name)
+    }
+  }
+
   private def generateBom = Def.task[Node] {
     val report = Classpaths.updateTask.value
+    val rootModule = projectID.value
+
+    val crossedVersionRootModule =
+      rootModule
+        .withName(
+          applyCrossVersion(
+            rootModule.name,
+            CrossVersion(rootModule.crossVersion, scalaVersion.value, scalaBinaryVersion.value)))
+
     val ignoreModules: Seq[ModuleReport] =
       if (configuration.value != Compile && noCompileDependenciesInOtherReports.value)
         report.configuration(Compile).map(_.modules).getOrElse(Seq.empty)
@@ -58,9 +74,10 @@ object BomSbtSettings {
         Seq.empty
 
     new BomBuilder(
+      crossedVersionRootModule,
       report.configuration(configuration.value),
       ignoreModules,
-      CycloneDxSchema.Version.VERSION_11
+      CycloneDxSchema.Version.VERSION_13
     ).buildXml
   }
 

@@ -1,12 +1,14 @@
 package sbtBom
 
 import com.github.packageurl.PackageURL
-import org.cyclonedx.{BomGeneratorFactory, CycloneDxSchema}
+import org.cyclonedx.BomGeneratorFactory
 import org.cyclonedx.CycloneDxSchema.Version
-import org.cyclonedx.model.{Bom, Component, License, LicenseChoice}
+import org.cyclonedx.model.{Bom, Component, Dependency, License, LicenseChoice, Metadata}
 import org.cyclonedx.util.{BomUtils, LicenseResolver}
-import sbt.librarymanagement.{ConfigurationReport, ModuleReport}
+import sbt.librarymanagement.{ConfigurationReport, ModuleID, ModuleReport}
 
+import java.time.LocalDate
+import java.util.{Date, UUID}
 import javax.xml.transform.TransformerFactory
 import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.sax.SAXResult
@@ -14,16 +16,94 @@ import scala.xml.Node
 import scala.xml.parsing.NoBindingFactoryAdapter
 
 class BomBuilder(
+  project: ModuleID,
   reportOption: Option[ConfigurationReport],
   ignoreModules: Seq[ModuleReport],
   schemaVersion: Version
 ) {
+  private class ModuleDetails(
+    val component: Component,
+    val dependency: Dependency,
+    val callers: Vector[ModuleID]
+  ) {
+    override def toString: String =
+      callers
+        .map(caller => s"${caller.organization} % ${caller.name} % ${caller.revision}")
+        .mkString(
+          s"${component.getGroup} % ${component.getName} % ${component.getVersion} callers:\n\t",
+          "\n\t",
+          "\n"
+        )
+  }
+
+  private object ModuleDetails {
+    def moduleDetails(moduleReport: ModuleReport): ModuleDetails = {
+      val component = toComponent(moduleReport);
+      new ModuleDetails(
+        component,
+        new Dependency(component.getPurl),
+        moduleReport.callers.map(_.caller))
+    }
+  }
+
   private def toBom(report: ConfigurationReport): Bom = {
     val bom = new Bom
-    //TODO: Add Serial Number for Spec >= 1.1
-    //TODO: Add Metadata & Dependencies for Spec >= 1.2
-    report.modules.map(toComponent).foreach(bom.addComponent)
+    bom.setSerialNumber(UUID.randomUUID().toString)
+
+    val modules = report
+      .modules
+      .map(ModuleDetails.moduleDetails)
+
+    val rootDependency = new Dependency(buildRootPackageUrl.canonicalize())
+
+    modules.foreach(module => {
+      System.out.println(module)
+      module.callers.foreach(caller => {
+        if (project.organization.equalsIgnoreCase(caller.organization) &&
+          project.name.equalsIgnoreCase(caller.name)
+        ) {
+          rootDependency.addDependency(module.dependency)
+        } else {
+          modules
+            .find(callerModule =>
+              callerModule.component.getGroup.equalsIgnoreCase(caller.organization) &&
+                callerModule.component.getName.equalsIgnoreCase(caller.name))
+            .foreach(_.dependency.addDependency(module.dependency))
+        }
+      })
+    })
+
+    bom.setMetadata(buildMetadata)
+    bom.addDependency(rootDependency)
+
+    modules.foreach(module => {
+      bom.addComponent(module.component)
+      bom.addDependency(module.dependency)
+    })
+
     bom
+  }
+
+  private def buildRootPackageUrl =
+    new PackageURL(
+      PackageURL.StandardTypes.MAVEN,
+      project.organization,
+      project.name,
+      project.revision,
+      null,
+      null)
+
+  def buildMetadata: Metadata = {
+    val metadata = new Metadata
+    metadata.setTimestamp(new Date(LocalDate.now().toEpochDay))
+    val component = new Component
+    component.setGroup(project.organization)
+    component.setName(project.name)
+    component.setVersion(project.revision)
+    component.setPurl(buildRootPackageUrl)
+    component.setBomRef(component.getPurl)
+    metadata.setComponent(component)
+    metadata
   }
 
   def buildXml: Node = {

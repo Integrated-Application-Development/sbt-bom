@@ -6,7 +6,7 @@ lazy val root = (project in file("."))
     organizationName := "SBT BOM",
     version := "0.1.3-SNAPSHOT",
     sbtPlugin := true,
-    scalaVersion := "2.12.8",
+    scalaVersion := "2.12.15",
     libraryDependencies ++= Dependencies.library,
     scriptedLaunchOpts += ("-Dplugin.version=" + version.value),
     scriptedBufferLog := false,
