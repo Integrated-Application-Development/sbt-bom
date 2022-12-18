@@ -25,16 +25,7 @@ class BomBuilder(
     val component: Component,
     val dependency: Dependency,
     val callers: Vector[ModuleID]
-  ) {
-    override def toString: String =
-      callers
-        .map(caller => s"${caller.organization} % ${caller.name} % ${caller.revision}")
-        .mkString(
-          s"${component.getGroup} % ${component.getName} % ${component.getVersion} callers:\n\t",
-          "\n\t",
-          "\n"
-        )
-  }
+  ) {}
 
   private object ModuleDetails {
     def moduleDetails(moduleReport: ModuleReport): ModuleDetails = {
@@ -57,7 +48,6 @@ class BomBuilder(
     val rootDependency = new Dependency(buildRootPackageUrl.canonicalize())
 
     modules.foreach(module => {
-      System.out.println(module)
       module.callers.foreach(caller => {
         if (project.organization.equalsIgnoreCase(caller.organization) &&
           project.name.equalsIgnoreCase(caller.name)
