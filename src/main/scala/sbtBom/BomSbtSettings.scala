@@ -1,14 +1,18 @@
 package sbtBom
 
-import java.io.FileOutputStream
+import java.io.{FileOutputStream, FileWriter, StringWriter, Writer}
 import java.nio.channels.Channels
-import sbt._
-import sbt.Keys._
-import sbtBom.BomSbtPlugin.autoImport._
+import sbt.*
+import sbt.Keys.*
+import sbtBom.BomSbtPlugin.autoImport.*
 import Defaults.prefix
-import org.cyclonedx.CycloneDxSchema
+import org.cyclonedx.CycloneDxSchema.Version
+import org.w3c.dom.Document
 
-import scala.xml.{Node, PrettyPrinter}
+import java.nio.charset.StandardCharsets
+import javax.xml.transform.TransformerFactory
+import javax.xml.transform.dom.DOMSource
+import javax.xml.transform.stream.StreamResult
 import scala.util.control.Exception.ultimately
 
 object BomSbtSettings {
@@ -30,7 +34,7 @@ object BomSbtSettings {
 
     log.info(s"Creating bom file ${bomFile.getAbsolutePath}")
 
-    writeXmlToFile(generateBom.value,"UTF-8", bomFile)
+    writeXmlToFile(generateBom.value, bomFile)
 
     log.info(s"Bom file ${bomFile.getAbsolutePath} created")
 
@@ -42,7 +46,7 @@ object BomSbtSettings {
     log.info("Creating bom")
 
     val bomText =
-      xmlToText(generateBom.value, "UTF-8")
+      writeXmlToText(generateBom.value)
 
     log.info("Bom created")
 
@@ -56,7 +60,7 @@ object BomSbtSettings {
     }
   }
 
-  private def generateBom = Def.task[Node] {
+  private def generateBom = Def.task {
     val report = Classpaths.updateTask.value
     val rootModule = projectID.value
 
@@ -77,27 +81,25 @@ object BomSbtSettings {
       crossedVersionRootModule,
       report.configuration(configuration.value),
       ignoreModules,
-      CycloneDxSchema.Version.VERSION_13
+      Version.VERSION_13
     ).buildXml
   }
 
-  private def writeXmlToFile(xml: Node,
-                             encoding: String,
-                             destFile: sbt.File): Unit =
-    writeToFile(xmlToText(xml, encoding), encoding, destFile)
+  private def writeXmlToFile(xml: Document, destFile: sbt.File): Unit = {
+    destFile.getParentFile.mkdirs
+    val writer = new FileWriter(destFile, StandardCharsets.UTF_8);
+    ultimately(writer.close()) {
+      writeXml(xml, writer)
+    }
+  }
 
-  private def xmlToText(bomContent: Node, encoding: String): String =
-    "<?xml version=\"1.0\" encoding=\"" + encoding + "\"?>\n" +
-      new PrettyPrinter(80, 2).format(bomContent)
+  private def writeXmlToText(xml: Document): String = {
+    val writer = new StringWriter();
+    writeXml(xml, writer)
+    writer.toString
+  }
 
-  private def writeToFile(content: String,
-                          encoding: String,
-                          destFile: sbt.File): Unit = {
-    destFile.getParentFile().mkdirs()
-    val fos = new FileOutputStream(destFile.getAbsolutePath)
-    val writer = Channels.newWriter(fos.getChannel(), encoding)
-    ultimately(writer.close())(
-      writer.write(content)
-    )
+  private def writeXml(xml: Document, writer: Writer): Unit = {
+    TransformerFactory.newInstance().newTransformer().transform(new DOMSource(xml), new StreamResult(writer));
   }
 }

@@ -1,19 +1,14 @@
 package sbtBom
 
 import com.github.packageurl.PackageURL
-import org.cyclonedx.BomGeneratorFactory
 import org.cyclonedx.CycloneDxSchema.Version
+import org.cyclonedx.BomGeneratorFactory
 import org.cyclonedx.model.{Bom, Component, Dependency, License, LicenseChoice, Metadata}
 import org.cyclonedx.util.{BomUtils, LicenseResolver}
 import sbt.librarymanagement.{ConfigurationReport, ModuleID, ModuleReport}
 
 import java.time.LocalDate
 import java.util.{Date, UUID}
-import javax.xml.transform.TransformerFactory
-import javax.xml.transform.dom.DOMSource
-import javax.xml.transform.sax.SAXResult
-import scala.xml.Node
-import scala.xml.parsing.NoBindingFactoryAdapter
 
 class BomBuilder(
   project: ModuleID,
@@ -35,6 +30,12 @@ class BomBuilder(
         new Dependency(component.getPurl),
         moduleReport.callers.map(_.caller))
     }
+  }
+
+  def buildXml = {
+    BomGeneratorFactory
+        .createXml(schemaVersion, reportOption.map(toBom).getOrElse(new Bom))
+        .generate()
   }
 
   private def toBom(report: ConfigurationReport): Bom = {
@@ -83,7 +84,7 @@ class BomBuilder(
       null,
       null)
 
-  def buildMetadata: Metadata = {
+  private def buildMetadata: Metadata = {
     val metadata = new Metadata
     metadata.setTimestamp(new Date(LocalDate.now().toEpochDay))
     val component = new Component
@@ -94,22 +95,6 @@ class BomBuilder(
     component.setBomRef(component.getPurl)
     metadata.setComponent(component)
     metadata
-  }
-
-  def buildXml: Node = {
-    val adapter = new NoBindingFactoryAdapter
-    TransformerFactory
-      .newInstance()
-      .newTransformer()
-      .transform(
-        new DOMSource(
-          BomGeneratorFactory
-            .createXml(schemaVersion, reportOption.map(toBom).getOrElse(new Bom))
-            .generate()
-        ),
-        new SAXResult(adapter)
-      )
-    adapter.rootElem
   }
 
   private def toComponent(moduleReport: ModuleReport): Component = {
