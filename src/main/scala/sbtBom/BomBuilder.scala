@@ -93,6 +93,7 @@ class BomBuilder(
     component.setVersion(project.revision)
     component.setPurl(buildRootPackageUrl)
     component.setBomRef(component.getPurl)
+    component.setType(Component.Type.APPLICATION)
     metadata.setComponent(component)
     metadata
   }
