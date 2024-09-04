@@ -20,7 +20,11 @@ class BomBuilder(
     val component: Component,
     val dependency: Dependency,
     val callers: Vector[ModuleID]
-  ) {}
+  ) {
+    def withAdditionalCallers(additionalCallers: Vector[ModuleID]): ModuleDetails = {
+      new ModuleDetails(component, dependency, (callers ++ additionalCallers).distinct)
+    }
+  }
 
   private object ModuleDetails {
     def moduleDetails(moduleReport: ModuleReport): ModuleDetails = {
@@ -45,6 +49,14 @@ class BomBuilder(
     val modules = report
       .modules
       .map(ModuleDetails.moduleDetails)
+      .foldLeft(Map.empty[String, ModuleDetails])((map, next) => {
+        map.get(next.component.getBomRef) match {
+          case Some(existing) =>
+            map.updated(existing.component.getBomRef, existing.withAdditionalCallers(next.callers))
+          case None => map.updated(next.component.getBomRef, next)
+        }
+      })
+      .values
 
     val rootDependency = new Dependency(buildRootPackageUrl.canonicalize())
 
