@@ -40,7 +40,7 @@ class BomBuilder(
 
   private def toBom(report: ConfigurationReport): Bom = {
     val bom = new Bom
-    bom.setSerialNumber(UUID.randomUUID().toString)
+    bom.setSerialNumber("urn:uuid:" + UUID.randomUUID().toString)
 
     val modules = report
       .modules
